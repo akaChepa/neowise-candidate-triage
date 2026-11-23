@@ -9,6 +9,13 @@
     textarea { box-sizing: border-box; display: block; width: 100%; margin: .5rem 0; padding: .5rem; font: inherit; }
     button { padding: .4rem .8rem; font: inherit; }
     pre { white-space: pre-wrap; }
+    .card { border: 1px solid #d0d7de; border-radius: .5rem; padding: 1rem; margin-top: 1rem; }
+    .card h2 { font-size: 1rem; margin: 0 0 .5rem; }
+    .topic { font-weight: 600; }
+    .warn { border-color: #d97706; background: #fffbeb; }
+    .error { border-color: #dc2626; background: #fef2f2; }
+    .draft { margin: .5rem 0 0; }
+    .hint { color: #57606a; font-size: .875rem; }
   </style>
 </head>
 <body>
@@ -16,20 +23,67 @@
   <form>
     <label for="message">Текст заявки</label>
     <textarea id="message" rows="4"></textarea>
-    <button type="submit">Разобрать заявку</button>
+    <button type="submit" id="submit">Разобрать заявку</button>
   </form>
-  <pre id="result" aria-live="polite"></pre>
+  <section id="panel" hidden></section>
   <script type="module">
     const form = document.querySelector("form");
-    const result = document.querySelector("#result");
+    const submit = document.querySelector("#submit");
+    const panel = document.querySelector("#panel");
+    const TOPIC_LABELS = { delivery: "Доставка", pricing: "Цены и стоимость", other: "Прочее" };
+    let requestId = 0;
+    let controller = null;
+    function render(html, className = "") {
+      panel.className = ("card " + className).trim();
+      panel.replaceChildren();
+      const template = document.createElement("template");
+      template.innerHTML = html;
+      panel.append(template.content.cloneNode(true));
+      panel.hidden = false;
+    }
+    function escapeHtml(value) {
+      return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    }
+    function renderReady(topic, draft) {
+      const label = TOPIC_LABELS[topic] || topic;
+      render("<h2>Разобрано автоматически</h2><p class=\"topic\">Тема: " + escapeHtml(label) + "</p><p class=\"draft\">" + escapeHtml(draft) + "</p>");
+    }
+    function renderManualReview() {
+      render("<h2>Нужен ручной разбор</h2><p>Модель не ответила или вернула непригодный результат. Черновик не сформирован — разберите заявку вручную, чтобы не отправить клиенту старый или пустой текст.</p><p class=\"hint\">Заявка сохранена, повторная отправка не создаст дубль.</p>", "warn");
+    }
+    function renderInvalidInput() {
+      render("<h2>Пустая заявка</h2><p>Введите текст обращения (хотя бы один непробельный символ).</p>", "error");
+    }
+    function renderError(message) {
+      render("<h2>Ошибка</h2><p>" + escapeHtml(message) + "</p>", "error");
+    }
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const reply = await fetch("/api/triage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: document.querySelector("#message").value }),
-      });
-      result.textContent = JSON.stringify(await reply.json(), null, 2);
+      const text = document.querySelector("#message").value;
+      if (text.trim().length === 0) { renderInvalidInput(); return; }
+      const currentId = ++requestId;
+      if (controller) controller.abort();
+      controller = new AbortController();
+      submit.disabled = true;
+      try {
+        const reply = await fetch("/api/triage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+          signal: controller.signal,
+        });
+        const data = await reply.json();
+        if (currentId !== requestId) return;
+        if (reply.status === 400 || data.status === "invalid_input") renderInvalidInput();
+        else if (data.status === "ready") renderReady(data.topic, data.draft);
+        else renderManualReview();
+      } catch (error) {
+        if (error.name === "AbortError") return;
+        if (currentId !== requestId) return;
+        renderError("Не удалось получить ответ. Попробуйте ещё раз.");
+      } finally {
+        if (currentId === requestId) submit.disabled = false;
+      }
     });
   </script>
 </body>
