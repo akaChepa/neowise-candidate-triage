@@ -116,3 +116,12 @@ describe("POST /api/triage - model failures -> manual_review", () => {
     assert.deepEqual(data, { status: "manual_review", topic: null, draft: null });
   });
 });
+
+describe("POST /api/triage - response time", () => {
+  it("model wait is bounded by 300 ms", async () => {
+    const startedAt = Date.now();
+    await triage({ text: "Заявка [timeout] проверка" });
+    const elapsed = Date.now() - startedAt;
+    assert.ok(elapsed < 900, "answer took " + elapsed + " ms, expected ~300 ms timeout");
+  });
+});
