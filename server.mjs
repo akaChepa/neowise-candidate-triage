@@ -4,10 +4,7 @@ import { pathToFileURL } from "node:url";
 import { classify } from "./mock-ai.mjs";
 
 const html = await readFile(new URL("./index.html", import.meta.url));
-
-// Сколько ждём модель. По заданию — не больше 300 мс.
 const MODEL_TIMEOUT_MS = Number(process.env.MODEL_TIMEOUT_MS || 300);
-// Ограничение на тело запроса: заявка — текст, 64 КБ с запасом.
 const MAX_BODY_BYTES = 64 * 1024;
 const ALLOWED_TOPICS = new Set(["delivery", "pricing", "other"]);
 
@@ -29,11 +26,7 @@ async function readBody(request) {
 
 function extractText(rawBody) {
   let parsed;
-  try {
-    parsed = JSON.parse(rawBody);
-  } catch {
-    return null;
-  }
+  try { parsed = JSON.parse(rawBody); } catch { return null; }
   if (!parsed || typeof parsed !== "object") return null;
   const { text } = parsed;
   if (typeof text !== "string") return null;
@@ -44,14 +37,9 @@ function extractText(rawBody) {
 
 function parseModelResult(raw) {
   let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  try { parsed = JSON.parse(raw); } catch { return null; }
   if (!parsed || typeof parsed !== "object") return null;
-  const topic = parsed.topic;
-  const draft = parsed.draft;
+  const { topic, draft } = parsed;
   if (typeof topic !== "string" || !ALLOWED_TOPICS.has(topic)) return null;
   if (typeof draft !== "string" || draft.trim().length === 0) return null;
   return { topic, draft: draft.trim() };
@@ -72,19 +60,13 @@ async function runModel(text) {
 
 async function handleTriage(request, response) {
   let rawBody;
-  try {
-    rawBody = await readBody(request);
-  } catch {
+  try { rawBody = await readBody(request); } catch {
     return json(response, 400, { status: "invalid_input" });
   }
   const text = extractText(rawBody);
-  if (text === null) {
-    return json(response, 400, { status: "invalid_input" });
-  }
+  if (text === null) return json(response, 400, { status: "invalid_input" });
   const result = await runModel(text);
-  if (result === null) {
-    return json(response, 200, { status: "manual_review", topic: null, draft: null });
-  }
+  if (result === null) return json(response, 200, { status: "manual_review", topic: null, draft: null });
   return json(response, 200, { status: "ready", topic: result.topic, draft: result.draft });
 }
 
@@ -98,9 +80,7 @@ export function createTriageServer() {
     if (request.method !== "POST" || request.url !== "/api/triage") {
       return json(response, 404, { status: "not_found" });
     }
-    try {
-      await handleTriage(request, response);
-    } catch {
+    try { await handleTriage(request, response); } catch {
       json(response, 500, { status: "server_error" });
     }
   });
