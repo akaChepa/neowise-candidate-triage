@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { classify } from "./mock-ai.mjs";
 
 const html = await readFile(new URL("./index.html", import.meta.url));
@@ -105,10 +106,10 @@ export function createTriageServer() {
   });
 }
 
-const isMain = import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`;
+const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
-  createTriageServer().listen(Number(process.env.PORT || 3000), "127.0.0.1", () => {
-    const port = Number(process.env.PORT || 3000);
-    console.log(`Сервер: http://127.0.0.1:${port}`);
+  const port = Number(process.env.PORT || 3000);
+  createTriageServer().listen(port, "127.0.0.1", () => {
+    console.log("Сервер: http://127.0.0.1:" + port);
   });
 }
